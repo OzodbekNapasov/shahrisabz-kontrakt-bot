@@ -1,14 +1,15 @@
 import telebot
 import openpyxl
-from datetime import datetime
 import os
-from fuzzywuzzy import fuzz
+import threading
 import time
+from fuzzywuzzy import fuzz
+from flask import Flask
 
 TOKEN = "8518508714:AAH3b_A2UlaGiI8MaBRqkDBGZKwj_r5tTHM"
 bot = telebot.TeleBot(TOKEN)
 
-# Foydalanuvchilar fayllarini saqlash uchun kesh
+app = Flask(__name__)
 baza_ombori = {}
 
 def ismlarni_standartlash(ism):
@@ -22,42 +23,43 @@ def ismlarni_standartlash(ism):
     ism = ism.replace("i", "e").replace("a", "e")
     return "".join(ism.split())
 
+@app.route("/")
+def home():
+    return "Tizim Render serverida 24/7 rejimida muvaffaqiyatli ishlamoqda!", 200
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
-    baza_ombori[chat_id] = None # Keshni tozalash
-    bot.send_message(chat_id, "Salom Ozodbek aka! Tizim POLLING rejimida 100% barqaror ishlamoqda. 🚀\n\n"
+    baza_ombori[chat_id] = None
+    bot.send_message(chat_id, "Salom Ozodbek aka! Tizim bulutda to'liq barqaror holatga keltirildi. 🚀\n\n"
                               "1. Birinchi bo'lib **Asosiy bazangizni** (.xlsx) faylini shu yerga yuboring.")
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     chat_id = message.chat.id
-    
+    if chat_id not in baza_ombori:
+        baza_ombori[chat_id] = None
+
     try:
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # 1-FAYL: Asosiy baza yuklanishi
-        if chat_id not in baza_ombori or baza_ombori[chat_id] is None:
-            baza_nomi = f"baza_{chat_id}.xlsx"
+        baza_nomi = f"baza_{chat_id}.xlsx"
+        deb_nomi = f"deb_{chat_id}.xlsx"
+        natija_nomi = f"Tayyor_Yangilangan_{chat_id}.xlsx"
+
+        if baza_ombori[chat_id] is None:
             with open(baza_nomi, 'wb') as f:
                 f.write(downloaded_file)
-            
             baza_ombori[chat_id] = baza_nomi
             bot.send_message(chat_id, "✅ Asosiy baza qabul qilindi!\n\n"
                                       "2. Endi bankdan kelgan yangi **Debitorka** faylini yuboring.")
             return
-        
-        # 2-FAYL: Debitorka kelganda hisob-kitob boshlanishi
         else:
-            baza_nomi = baza_ombori[chat_id]
-            deb_nomi = f"deb_{chat_id}.xlsx"
-            natija_nomi = f"Tayyor_Yangilangan_{chat_id}.xlsx"
-            
             with open(deb_nomi, 'wb') as f:
                 f.write(downloaded_file)
             
-            bot.send_message(chat_id, "🔄 Excel formulalari tekshirilmoqda va ismlar taqqoslanmoqda, kuting...")
+            bot.send_message(chat_id, "🔄 Excel formulalarini himoyalash va aqlli taqqoslash boshlandi, kuting...")
 
             wb_baza_write = openpyxl.load_workbook(baza_nomi, data_only=False)
             wb_baza_read = openpyxl.load_workbook(baza_nomi, data_only=True)
@@ -67,7 +69,6 @@ def handle_docs(message):
             sheet_read = wb_baza_read.active
             sheet_deb = wb_deb.active
 
-            # Ustunlarni avtomatik qidirib aniqlash
             ism_ustun = 3  
             tolov_ustun = 5 
             
@@ -79,7 +80,6 @@ def handle_docs(message):
                     if any(x in val for x in ['jami', 'to\'lagan summasi', 'to\'lov']):
                         tolov_ustun = c
 
-            # Asosiy bazadan talabalarni yig'ish
             baza_talabalari = []
             for row in range(4, sheet_read.max_row + 1):
                 fio = sheet_read.cell(row=row, column=ism_ustun).value
@@ -93,13 +93,11 @@ def handle_docs(message):
             yangilanish_tarixi = []
             topilmaganlar = []
             
-            # Debitorka tahlili (G-summa, I-ism ustunlari)
             for row in range(2, sheet_deb.max_row + 1):
                 summa_val = sheet_deb.cell(row=row, column=7).value
                 deb_fio = sheet_deb.cell(row=row, column=9).value
 
-                if not deb_fio or not summa_val: 
-                    continue
+                if not deb_fio or not summa_val: continue
 
                 try:
                     yangi_summa = float(summa_val)
@@ -168,11 +166,17 @@ def handle_docs(message):
     except Exception as e:
         bot.send_message(chat_id, f"❌ Ichki xatolik yuz berdi:\n`{str(e)}`")
 
-# Bepul serverlarda uzluksiz so'rov zanjiri (Polling)
-if __name__ == "__main__":
-    print("Bot Polling rejimida muvaffaqiyatli yondi...")
+# Botni alohida fonda uzluksiz yurgizish funksiyasi
+def run_bot():
+    bot.remove_webhook()
     while True:
         try:
             bot.polling(none_stop=True, interval=2, timeout=20)
-        except Exception as e:
+        except Exception:
             time.sleep(5)
+
+if __name__ == "__main__":
+    # Botni orqa fonda (Thread) xavfsiz boshlaymiz
+    threading.Thread(target=run_bot, daemon=True).start()
+    # Flask portini Render uchun ochiq tutamiz
+    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
