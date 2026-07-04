@@ -5,9 +5,18 @@ import os
 from fuzzywuzzy import fuzz
 from flask import Flask, request
 
-# TOKEN - Environment variable dan olish (Hardcoded emas!)
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8518508714:AAFHLqOybxwOZ5ZR8eebRm-UKQCWFJWu8U4")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Render beradi
+# ============ ENVIRONMENT VARIABLES ============
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+print("=" * 70)
+print("🚀 BOT INITIALIZATION")
+print("=" * 70)
+print(f"TOKEN available: {bool(TOKEN)}")
+if TOKEN:
+    print(f"TOKEN: {TOKEN[:20]}...{TOKEN[-5:]}")
+print(f"WEBHOOK_URL: {WEBHOOK_URL}")
+print("=" * 70)
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -24,20 +33,28 @@ def ismlarni_standartlash(ism):
     ism = ism.replace("i", "e").replace("a", "e")
     return "".join(ism.split())
 
+# ============ WEBHOOK ENDPOINTS ============
 @app.route('/' + TOKEN, methods=['POST'])
 def getMessage():
-    json_string = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
+    print(f"📨 Webhook qabul qilindi")
+    try:
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        print(f"✅ Update processed")
+        bot.process_new_updates([update])
+    except Exception as e:
+        print(f"❌ Webhook xatosi: {e}")
     return "!", 200
 
 @app.route("/")
 def webhook():
-    return "Bot Render bulutida 24/7 faol!", 200
+    return "Bot Render bulutida 24/7 faol! ✅", 200
 
+# ============ BOT MESSAGE HANDLERS ============
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
+    print(f"✅ /start from {chat_id}")
     user_data[chat_id] = {"holat": "sana_kutish"}
     bot.reply_to(message, "Salom! Render bulutida 24/7 ishlovchi aqlli tizim faol. 🚀\n\n"
                           "To'lovlarni **qaysi sanadan boshlab** hisoblayiy?\n"
@@ -54,11 +71,13 @@ def qabul_qilish_sanasi(message):
         bot.send_message(chat_id, f"✅ Sana tasdiqlandi: **{sana_matni}**.\n\n"
                                   f"1. **Asosiy bazangizni** (.xlsx) yuboring.")
     except ValueError:
+        print(f"❌ Noto'g'ri sana: {sana_matni}")
         bot.reply_to(message, "❌ Noto'g'ri format. Nuqtalar bilan kiriting (Masalan: 27.06.2026):")
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     chat_id = message.chat.id
+    print(f"📄 Fayl: {message.document.file_name}")
     if chat_id not in user_data or "sana" not in user_data[chat_id]:
         bot.reply_to(message, "❌ Iltimos, avval /start buyrug'ini bosing!")
         return
@@ -76,6 +95,7 @@ def handle_docs(message):
                 f.write(downloaded_file)
             user_data[chat_id]["baza_yuklandi"] = True
             user_data[chat_id]["baza_path"] = baza_nomi
+            print(f"✅ Baza: {baza_nomi}")
             bot.reply_to(message, "✅ Asosiy baza yuklandi.\n\n"
                                   "2. Endi bankdan kelgan **Debitorka** faylini yuboring.")
             return
@@ -84,6 +104,7 @@ def handle_docs(message):
             with open(deb_nomi, 'wb') as f:
                 f.write(downloaded_file)
             user_data[chat_id]["deb_yuklandi"] = True
+            print(f"✅ Deb: {deb_nomi}")
             
             baza_path = user_data[chat_id]["baza_path"]
             cheklov_sanasi = user_data[chat_id]["sana"]
@@ -201,27 +222,36 @@ def handle_docs(message):
             user_data[chat_id] = {}
 
     except Exception as e:
+        print(f"❌ XATO: {str(e)}")
         bot.send_message(chat_id, f"❌ Xatolik yuz berdi: {str(e)}")
         user_data[chat_id] = {}
 
-# ============ MUHIM: Webhook sozlash ============
-if __name__ == "__main__":
+# ============ WEBHOOK SETUP - GUNICORN LOAD'ING'DA ISHLAYDI ============
+def setup_webhook():
+    """Gunicorn app load qilinganda webhook o'rnatiladi"""
     try:
+        if not TOKEN or not WEBHOOK_URL:
+            print("❌ TOKEN yoki WEBHOOK_URL topilmadi!")
+            return
+        
+        print(f"\n🔧 Webhook sozlanmoqda...")
         bot.remove_webhook()
         
-        # Webhook URL Render'dan avtomatik olish
-        if not WEBHOOK_URL:
-            print("⚠️ WEBHOOK_URL topilmadi! Render sozlamalarini tekshiring.")
-        else:
-            webhook_full_url = WEBHOOK_URL + "/" + TOKEN
-            print(f"✅ Webhook o'rnatilmoqda: {webhook_full_url}")
-            bot.set_webhook(url=webhook_full_url)
-            print("✅ Webhook muvaffaqiyatli o'rnatildi!")
+        webhook_full_url = WEBHOOK_URL + "/" + TOKEN
+        print(f"✅ Webhook URL: {webhook_full_url}")
         
-        # Flask serverni ishga tushirish
-        port = int(os.environ.get('PORT', 5000))
-        print(f"🚀 Flask {port} portda ishga tushdi...")
-        app.run(host="0.0.0.0", port=port, debug=False)
+        bot.set_webhook(url=webhook_full_url)
+        print("✅ WEBHOOK MUVAFFAQIYATLI O'RNATILDI!")
+        print(f"🚀 Bot ready to receive messages!\n")
         
     except Exception as e:
-        print(f"❌ Xato: {e}")
+        print(f"❌ Webhook setup xatosi: {e}")
+
+# Gunicorn load qilinganda chaqiriladi
+setup_webhook()
+
+# ============ FLASK APP ============
+if __name__ == "__main__":
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Server {port} portda ishga tushdi...")
+    app.run(host="0.0.0.0", port=port, debug=False)
