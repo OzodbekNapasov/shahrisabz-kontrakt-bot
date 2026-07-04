@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 from fuzzywuzzy import fuzz
 from flask import Flask, request
+import json
 
 # ============ ENVIRONMENT VARIABLES ============
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -18,7 +19,7 @@ if TOKEN:
 print(f"WEBHOOK_URL: {WEBHOOK_URL}")
 print("=" * 70)
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
 user_data = {}
 
@@ -33,53 +34,45 @@ def ismlarni_standartlash(ism):
     ism = ism.replace("i", "e").replace("a", "e")
     return "".join(ism.split())
 
-# ============ WEBHOOK ENDPOINTS ============
-@app.route('/' + TOKEN, methods=['POST'])
-def getMessage():
-    print(f"📨 Webhook qabul qilindi")
-    try:
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        print(f"✅ Update processed")
-        bot.process_new_updates([update])
-    except Exception as e:
-        print(f"❌ Webhook xatosi: {e}")
-    return "!", 200
-
-@app.route("/")
-def webhook():
-    return "Bot Render bulutida 24/7 faol! ✅", 200
-
 # ============ BOT MESSAGE HANDLERS ============
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
-    print(f"✅ /start from {chat_id}")
+    print(f"✅ /START COMMAND RECEIVED from {chat_id}")
     user_data[chat_id] = {"holat": "sana_kutish"}
-    bot.reply_to(message, "Salom! Render bulutida 24/7 ishlovchi aqlli tizim faol. 🚀\n\n"
-                          "To'lovlarni **qaysi sanadan boshlab** hisoblayiy?\n"
-                          "Format: `27.06.2026` shaklida yozing:")
+    
+    response = ("Salom! Render bulutida 24/7 ishlovchi aqlli tizim faol. 🚀\n\n"
+                "To'lovlarni **qaysi sanadan boshlab** hisoblayiy?\n"
+                "Format: `27.06.2026` shaklida yozing:")
+    bot.send_message(chat_id, response)
+    print(f"✅ RESPONSE SENT to {chat_id}")
 
 @bot.message_handler(func=lambda message: message.chat.id in user_data and user_data[message.chat.id].get("holat") == "sana_kutish")
 def qabul_qilish_sanasi(message):
     chat_id = message.chat.id
     sana_matni = message.text.strip()
+    print(f"📅 DATE RECEIVED: {sana_matni} from {chat_id}")
     try:
         cheklov_sanasi = datetime.strptime(sana_matni, "%d.%m.%Y")
         user_data[chat_id]["sana"] = cheklov_sanasi
         user_data[chat_id]["holat"] = "fayl_kutish"
-        bot.send_message(chat_id, f"✅ Sana tasdiqlandi: **{sana_matni}**.\n\n"
-                                  f"1. **Asosiy bazangizni** (.xlsx) yuboring.")
+        response = (f"✅ Sana tasdiqlandi: **{sana_matni}**.\n\n"
+                    f"1. **Asosiy bazangizni** (.xlsx) yuboring.")
+        bot.send_message(chat_id, response)
+        print(f"✅ DATE CONFIRMED for {chat_id}")
     except ValueError:
-        print(f"❌ Noto'g'ri sana: {sana_matni}")
-        bot.reply_to(message, "❌ Noto'g'ri format. Nuqtalar bilan kiriting (Masalan: 27.06.2026):")
+        print(f"❌ INVALID DATE FORMAT: {sana_matni}")
+        bot.send_message(chat_id, "❌ Noto'g'ri format. Nuqtalar bilan kiriting (Masalan: 27.06.2026):")
 
 @bot.message_handler(content_types=['document'])
 def handle_docs(message):
     chat_id = message.chat.id
-    print(f"📄 Fayl: {message.document.file_name}")
+    file_name = message.document.file_name if message.document else "unknown"
+    print(f"📄 DOCUMENT RECEIVED: {file_name} from {chat_id}")
+    
     if chat_id not in user_data or "sana" not in user_data[chat_id]:
-        bot.reply_to(message, "❌ Iltimos, avval /start buyrug'ini bosing!")
+        print(f"❌ NO DATE SET for {chat_id}")
+        bot.send_message(chat_id, "❌ Iltimos, avval /start buyrug'ini bosing!")
         return
 
     try:
@@ -95,21 +88,20 @@ def handle_docs(message):
                 f.write(downloaded_file)
             user_data[chat_id]["baza_yuklandi"] = True
             user_data[chat_id]["baza_path"] = baza_nomi
-            print(f"✅ Baza: {baza_nomi}")
-            bot.reply_to(message, "✅ Asosiy baza yuklandi.\n\n"
-                                  "2. Endi bankdan kelgan **Debitorka** faylini yuboring.")
+            print(f"✅ BASE FILE SAVED: {baza_nomi}")
+            bot.send_message(chat_id, "✅ Asosiy baza yuklandi.\n\n2. Endi bankdan kelgan **Debitorka** faylini yuboring.")
             return
         
         elif "deb_yuklandi" not in user_data[chat_id]:
             with open(deb_nomi, 'wb') as f:
                 f.write(downloaded_file)
             user_data[chat_id]["deb_yuklandi"] = True
-            print(f"✅ Deb: {deb_nomi}")
+            print(f"✅ DEBTOR FILE SAVED: {deb_nomi}")
             
             baza_path = user_data[chat_id]["baza_path"]
             cheklov_sanasi = user_data[chat_id]["sana"]
             
-            bot.reply_to(message, "🔄 Hisob-kitob va matnli hisobot tayyorlanmoqda. Kuting...")
+            bot.send_message(chat_id, "🔄 Hisob-kitob va matnli hisobot tayyorlanmoqda. Kuting...")
 
             wb_baza_write = openpyxl.load_workbook(baza_path, data_only=False)
             wb_baza_read = openpyxl.load_workbook(baza_path, data_only=True)
@@ -214,44 +206,93 @@ def handle_docs(message):
             with open(natija_nomi, 'rb') as f_send:
                 bot.send_document(chat_id, f_send, caption="📄 Formulalari buzilmagan tayyor Excel faylingiz.")
             
-            bot.send_message(chat_id, hisobot_matni, parse_mode="Markdown")
+            bot.send_message(chat_id, hisobot_matni)
 
             if os.path.exists(baza_path): os.remove(baza_path)
             if os.path.exists(deb_nomi): os.remove(deb_nomi)
             if os.path.exists(natija_nomi): os.remove(natija_nomi)
             user_data[chat_id] = {}
+            print(f"✅ PROCESSING COMPLETE for {chat_id}")
 
     except Exception as e:
-        print(f"❌ XATO: {str(e)}")
+        print(f"❌ ERROR: {str(e)}")
         bot.send_message(chat_id, f"❌ Xatolik yuz berdi: {str(e)}")
         user_data[chat_id] = {}
 
-# ============ WEBHOOK SETUP - GUNICORN LOAD'ING'DA ISHLAYDI ============
+@bot.message_handler(func=lambda message: True)
+def handle_other_messages(message):
+    """Boshqa xabarlar uchun default handler"""
+    chat_id = message.chat.id
+    print(f"📨 OTHER MESSAGE from {chat_id}: {message.text[:50] if message.text else 'no text'}")
+    bot.send_message(chat_id, "❌ Noma'lum buyruq. /start bilan boshlang!")
+
+# ============ WEBHOOK ENDPOINTS ============
+@app.route('/' + TOKEN, methods=['POST'])
+def getMessage():
+    print(f"\n📨 WEBHOOK RECEIVED AT /{TOKEN}")
+    try:
+        json_data = request.get_json()
+        print(f"📦 JSON DATA: {json.dumps(json_data, indent=2)[:200]}...")
+        
+        update = telebot.types.Update.de_json(json_data)
+        print(f"✅ UPDATE OBJECT CREATED: {update}")
+        
+        # Directly handle message
+        if update.message:
+            print(f"✅ MESSAGE DETECTED: {update.message}")
+            bot.process_new_updates([update])
+            print(f"✅ MESSAGE PROCESSED")
+        else:
+            print(f"❌ NO MESSAGE IN UPDATE")
+            
+    except Exception as e:
+        print(f"❌ WEBHOOK ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return "ok", 200
+
+@app.route("/")
+def webhook():
+    return "Bot Render bulutida 24/7 faol! ✅", 200
+
+@app.route("/health")
+def health():
+    return "OK", 200
+
+# ============ WEBHOOK SETUP ============
 def setup_webhook():
-    """Gunicorn app load qilinganda webhook o'rnatiladi"""
+    """Webhook o'rnatish"""
     try:
         if not TOKEN or not WEBHOOK_URL:
             print("❌ TOKEN yoki WEBHOOK_URL topilmadi!")
             return
         
-        print(f"\n🔧 Webhook sozlanmoqda...")
+        print(f"\n🔧 WEBHOOK SETUP STARTING...")
         bot.remove_webhook()
+        print(f"✅ OLD WEBHOOK REMOVED")
         
         webhook_full_url = WEBHOOK_URL + "/" + TOKEN
-        print(f"✅ Webhook URL: {webhook_full_url}")
+        print(f"✅ WEBHOOK URL: {webhook_full_url}")
         
         bot.set_webhook(url=webhook_full_url)
-        print("✅ WEBHOOK MUVAFFAQIYATLI O'RNATILDI!")
-        print(f"🚀 Bot ready to receive messages!\n")
+        print(f"✅ WEBHOOK SET SUCCESSFULLY!")
+        
+        # Tekshirish
+        info = bot.get_webhook_info()
+        print(f"✅ WEBHOOK INFO: {info}")
+        print(f"🚀 BOT READY TO RECEIVE MESSAGES!\n")
         
     except Exception as e:
-        print(f"❌ Webhook setup xatosi: {e}")
+        print(f"❌ WEBHOOK SETUP ERROR: {e}")
+        import traceback
+        traceback.print_exc()
 
-# Gunicorn load qilinganda chaqiriladi
+# App startup
 setup_webhook()
 
-# ============ FLASK APP ============
+# ============ MAIN ============
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    print(f"Server {port} portda ishga tushdi...")
+    print(f"🚀 SERVER STARTING ON PORT {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
