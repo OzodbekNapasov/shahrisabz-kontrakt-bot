@@ -1,15 +1,13 @@
 import telebot
 import openpyxl
 import os
-import threading
 import time
 from fuzzywuzzy import fuzz
-from flask import Flask
 
+# Telegram Bot Token
 TOKEN = "8518508714:AAH3b_A2UlaGiI8MaBRqkDBGZKwj_r5tTHM"
 bot = telebot.TeleBot(TOKEN)
 
-app = Flask(__name__)
 baza_ombori = {}
 
 def ismlarni_standartlash(ism):
@@ -23,15 +21,11 @@ def ismlarni_standartlash(ism):
     ism = ism.replace("i", "e").replace("a", "e")
     return "".join(ism.split())
 
-@app.route("/")
-def home():
-    return "Tizim Render serverida 24/7 rejimida muvaffaqiyatli ishlamoqda!", 200
-
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
-    baza_ombori[chat_id] = None
-    bot.send_message(chat_id, "Salom Ozodbek aka! Tizim bulutda to'liq barqaror holatga keltirildi. 🚀\n\n"
+    baza_ombori[chat_id] = None # Keshni tozalash
+    bot.send_message(chat_id, "Salom Ozodbek aka! Tizim Background Worker rejimida 100% barqaror ishlamoqda. 🚀\n\n"
                               "1. Birinchi bo'lib **Asosiy bazangizni** (.xlsx) faylini shu yerga yuboring.")
 
 @bot.message_handler(content_types=['document'])
@@ -166,17 +160,10 @@ def handle_docs(message):
     except Exception as e:
         bot.send_message(chat_id, f"❌ Ichki xatolik yuz berdi:\n`{str(e)}`")
 
-# Botni alohida fonda uzluksiz yurgizish funksiyasi
-def run_bot():
-    bot.remove_webhook()
+if __name__ == "__main__":
+    print("Bot fonda muvaffaqiyatli ishlamoqda...")
     while True:
         try:
             bot.polling(none_stop=True, interval=2, timeout=20)
         except Exception:
             time.sleep(5)
-
-if __name__ == "__main__":
-    # Botni orqa fonda (Thread) xavfsiz boshlaymiz
-    threading.Thread(target=run_bot, daemon=True).start()
-    # Flask portini Render uchun ochiq tutamiz
-    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
