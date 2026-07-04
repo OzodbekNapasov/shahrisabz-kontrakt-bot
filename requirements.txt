@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+openpyxl
+fuzzywuzzy
+python-Levenshtein
+Flask
+gunicorn
