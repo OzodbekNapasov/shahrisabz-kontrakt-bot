@@ -209,3 +209,5 @@ if __name__ == "__main__":
     # Quyidagi havolani keyingi qadamda Render bergan havola bilan almashtirasiz!
     bot.set_webhook(url="https://shaxrisabz-bot.onrender.com/" + TOKEN) 
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
+
+https://shahrisabz-kontrakt-bot.onrender.com
